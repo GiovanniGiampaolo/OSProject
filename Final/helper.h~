@@ -1,0 +1,12 @@
+/* Configuration parameters */
+#ifndef _HELP_H_
+#define _HELP_H_
+
+#define END_COMMAND "END"
+#define MAP_COMMAND "MAP"
+#define DEBUG 1
+#define SERVER_ADDRESS "127.0.0.1"
+#define N_GAMER 5
+#define SERVER_PORT 2015
+
+#endif

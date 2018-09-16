@@ -1,0 +1,242 @@
+#include <GL/glut.h>
+#include <math.h>
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <arpa/inet.h>  // htons()
+#include <netinet/in.h> // struct sockaddr_in
+#include <sys/socket.h>
+#include <errno.h>
+
+#include "image.h"
+#include "surface.h"
+#include "world.h"
+#include "vehicle.h"
+#include "world_viewer.h"
+#include "functions.h"
+#include "help.h"
+#include "so_game_protocol.h"
+ 
+World world;
+Vehicle* vehicle;
+
+typedef struct {
+  volatile int run;
+  World* world;
+} UpdaterArgs; 
+
+void* updater_thread(void* args_){
+  UpdaterArgs* args=(UpdaterArgs*)args_;
+  while(args->run){
+    World_update(args->world);
+    usleep(30000); 
+  }
+  return 0;
+}
+
+int main(int argc, char **argv) {
+    
+    uint16_t *ip_addr;
+
+    if (argc<2){
+      printf("%susage: %s <server_address> <player texture> <port_number>(optional)%s\n", GREEN, argv[0], RESET);
+      exit(-1);
+    }
+    
+    if (IS_ADDRESS(argv[1])){ 
+        ip_addr = inet_addr(argv[1]);
+        fprintf(stderr, "%s---@gamer%s starting remote connection with server address = %s..\n", GREEN, RESET, argv[1]);
+    } else {
+	fprintf(stderr, "%s---@gamer%s invalid ip_address..\n", GREEN, RESET);
+	exit(EXIT_FAILURE);
+    }
+
+    int ret; 
+    char user_id[20], img_pack_buf[1000000];
+    size_t command_len = strlen(MAP_COMMAND), img_pack_buf_len = sizeof(img_pack_buf),
+	 uid_len = sizeof(user_id);
+
+    // variables for handling a socket
+    int socket_desc;
+    struct sockaddr_in server_addr = {0};
+
+    // create a socket
+    socket_desc = socket(AF_INET, SOCK_STREAM, 0);
+    ERROR_HELPER(socket_desc, "Could not create socket");
+
+    // set up parameters for the connection
+    server_addr.sin_addr.s_addr = ip_addr;
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_port        = htons(SERVER_PORT);
+
+    // initiate a connection on the socket
+    ret = connect(socket_desc, (struct sockaddr*) &server_addr, sizeof(struct sockaddr_in));
+    ERROR_HELPER(ret, "Could not create connection");
+    printf("%s---@gamer%s connected to server!..\n", GREEN, RESET);
+
+    char buf[1024];
+    size_t buf_len = sizeof(buf), msg_len, recv_bytes, pack_len;
+
+    //display welcome message
+    while ((recv_bytes = recv(socket_desc, buf, buf_len-1, 0)) < 0) {
+	 if (errno == EINTR) continue;
+         ERROR_HELPER(-1, "Cannot read from socket");
+    }
+    buf[recv_bytes] = '\0';
+    printf("%s", buf); 
+    
+    //send user_id
+    if(fgets(user_id, uid_len, stdin) != NULL) {
+        msg_len = strlen(user_id);
+	user_id[--msg_len] = '\0';
+    }
+     
+    while ((ret = send(socket_desc, user_id, msg_len, 0)) < 0) {
+	if (errno == EINTR) continue;
+	ERROR_HELPER(-1, "Cannot write to the socket");
+    } 
+    
+    printf("%s---@%s%s loading texture image from %s .. ", GREEN, user_id, RESET, argv[2]);
+    Image* my_texture_for_server = Image_load(argv[2]);
+    if (my_texture_for_server) {
+        printf("Done! \n");
+    } else {
+        printf("Fail! \n"); 
+    }
+ 
+    //send texture to server
+    PacketHeader header;
+    header.type = PostTexture;
+    ImagePacket *img_pack = malloc(sizeof(ImagePacket));
+    img_pack->header = header;
+    img_pack->image = my_texture_for_server;
+    pack_len = Packet_serialize(img_pack_buf, &img_pack->header);
+    while ((ret = send(socket_desc, img_pack_buf, pack_len, 0)) < 0) {
+	if (errno == EINTR) continue;
+	ERROR_HELPER(-1, "Cannot write to the socket");
+    }
+    fprintf(stderr,"%sbyte sent --> %d%s\n", RED, pack_len, RESET);
+
+    // display commands from server
+    while ((recv_bytes = recv(socket_desc, buf, buf_len-1, 0)) < 0) {
+	 if (errno == EINTR) continue;
+         ERROR_HELPER(-1, "Cannot read from socket");
+    }
+    buf[recv_bytes] = '\0';
+    printf("%s", buf);
+    
+    //start the game asking map
+    while(1){ 
+	   printf("%s---@%s%s ", GREEN, user_id, RESET);
+	   scanf("%s", buf);
+	   msg_len = strlen(buf);
+	   
+	   if (msg_len == command_len && !memcmp(buf, MAP_COMMAND, command_len)){
+		printf("%s---@%s%s map requested!\n", GREEN, user_id, RESET);
+		while ((ret = send(socket_desc, buf, msg_len, 0)) < 0) {
+			if (errno == EINTR) continue;
+			ERROR_HELPER(-1, "Cannot write to the socket");
+    		}
+		break;
+	   } 
+    } 
+    
+    //receive elevation from server
+    while ((pack_len = recv(socket_desc, img_pack_buf, 262183, 0)) < 0) {
+	        if (errno == EINTR) continue;
+        	ERROR_HELPER(-1, "Cannot read from socket");
+    } 
+    img_pack_buf[pack_len] = '\0';   
+    fprintf(stderr,"%sbyte received --> %d%s\n", RED, pack_len, RESET);  
+    ImagePacket* el_packet = (ImagePacket*) Packet_deserialize(img_pack_buf, pack_len);    
+    memset(img_pack_buf, 0, pack_len);
+
+    printf("%s---@%s%s loading map elevation from server..", GREEN, user_id, RESET);
+    Image_save(el_packet->image, "map_elevation.pgm");
+    Image* map_elevation =Image_load("map_elevation.pgm");
+    if (map_elevation) {
+        printf("Done! \n");
+    } else {
+        printf("Fail! \n");
+        exit(-1);
+    }
+    
+    //receive texture from server
+    while ((pack_len = recv(socket_desc, img_pack_buf, 786471, 0)) < 0) {
+	if (errno == EINTR) continue;
+        ERROR_HELPER(-1, "Cannot read from socket");
+    } 
+    img_pack_buf[pack_len] = '\0';
+    fprintf(stderr,"%sbyte received --> %d%s\n", RED, pack_len, RESET);
+    ImagePacket* text_packet = (ImagePacket*) Packet_deserialize(img_pack_buf, pack_len);
+    memset(img_pack_buf, 0, pack_len);
+
+    printf("%s---@%s%s loading map texture from server..", GREEN, user_id, RESET);
+    Image_save(text_packet->image, "map_texture.ppm");
+    Image* map_texture = Image_load("map_texture.ppm");
+    if (map_texture) {
+        printf("Done! \n");
+    } else {
+        printf("Fail! \n");
+        exit(-1);
+    }
+
+    //free space
+    Packet_free(&el_packet->header);
+    Packet_free(&text_packet->header);
+    
+    // construct the world
+    printf("%s---@%s%s launching the world\n", GREEN, user_id, RESET);
+    World_init(&world, map_elevation, map_texture, 0.5, 0.5, 0.5);
+    vehicle=(Vehicle*) malloc(sizeof(Vehicle));
+    Vehicle_init(vehicle, &world, user_id, my_texture_for_server);
+    World_addVehicle(&world, vehicle);
+  
+    // spawn a thread that will listen the update messages from
+    // the server, and sends back the controls
+    // the update for yourself are written in the desired_*_force
+    // fields of the vehicle variable
+    // when the server notifies a new player has joined the game
+    // request the texture and add the player to the pool
+    /*FILLME*/
+    printf("%s---@%s%s press %sESC%s for end the game\n", GREEN, user_id, RESET, BLUE, RESET);
+			
+    pthread_t runner_thread;
+    pthread_attr_t runner_attrs;
+    UpdaterArgs runner_args={
+       	 .run=1,
+       	 .world=&world
+    };
+    
+    pthread_attr_init(&runner_attrs);
+    pthread_create(&runner_thread, &runner_attrs, updater_thread, &runner_args);            
+    WorldViewer_runGlobal(&world, vehicle, &argc, argv);
+printf("%s---@%s%s dioporco1..\n", GREEN, user_id, RESET);
+    runner_args.run=0;
+printf("%s---@%s%s dioporco2..\n", GREEN, user_id, RESET);
+    void* retval;
+    pthread_join(runner_thread, &retval);
+
+    printf("%s---@%s%s exiting..\n", GREEN, user_id, RESET);
+    //end message
+    msg_len = sprintf(buf, END_COMMAND);
+
+    while ((ret = send(socket_desc, buf, msg_len, 0)) < 0) {
+	if (errno == EINTR) continue;
+	ERROR_HELPER(-1, "Cannot write to the socket");
+    }
+ 
+    //free up space
+    Image_free(map_texture);
+    Image_free(map_elevation);
+    Vehicle_destroy(vehicle);
+
+    // display commands from server
+    msg_len = RECEIVE(socket_desc, buf, buf_len-1);
+    printf("%s", buf);
+    
+    ret = close(socket_desc);
+    ERROR_HELPER(ret, "Cannot close socket");
+
+    return 0;             
+}

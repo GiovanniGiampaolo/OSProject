@@ -1,6 +1,5 @@
 #include "functions.h"
 #include "help.h"
-
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>

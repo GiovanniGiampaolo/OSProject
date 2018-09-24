@@ -1,10 +1,5 @@
-#ifdef __APPLE__
-#include <OpenGL/gl.h>
-#include <GLUT/glut.h>
-#else
 #include <GL/gl.h>
 #include <GL/glut.h>
-#endif
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,10 +10,10 @@
 #include <assert.h>
 
 typedef struct World {
-  ListHead vehicles; // list of vehicles
-  Surface ground;    // surface
+  ListHead vehicles; //list of vehicles
+  Surface ground;    //surface
 
-  // stuff
+  //stuff
   float dt;
   struct timeval last_update;
   float time_scale;
@@ -53,6 +48,7 @@ int World_init(World* w,
 		     float_image->rows, 
 		     float_image->cols,
 		     .5, .5, 5);
+		     
   w->ground.texture=surface_texture;
   Image_free(float_image);
   w->dt = 1;

@@ -1,11 +1,6 @@
 #include "vehicle.h"
-#ifdef __APPLE__
-#include <OpenGL/gl.h>
-#include <GLUT/glut.h>
-#else
 #include <GL/glut.h>
 #include <GL/gl.h>
-#endif
 #include <math.h>
 #include "world.h"
 

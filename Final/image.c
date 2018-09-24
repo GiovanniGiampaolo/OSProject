@@ -137,12 +137,9 @@ Image* Image_deserialize(const char* buffer, int size) {
       return 0;
     buffer+=char_read;
     size-=char_read;
-    //printf("read");
   } while(line[0]=='#');
 
   sscanf(line, "%d %d\n", &cols, &rows);
-  //printf("rows:%d, cols: %d\n", rows, cols);
-  //printf("magic number: [%s]\n", magic_number);
 
   int maxval;
   char_read=getLine(line, buffer, size);

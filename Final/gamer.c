@@ -35,8 +35,6 @@ void ADD_ALL(World* world, Image* img, int my_id, Gamer** buffer){
 		if ((gamer_i = GET_GAMER(buffer,i)) != NULL){
 			printf("BELLA ZI %d\n", i);
 			vehicle_i = calloc(1, sizeof(Vehicle));
-			//Vehicle_init(vehicle_i, world, gamer_i->user_id, img);
-            //World_addVehicle(world, vehicle_i);
 		}
 	}
 }
@@ -70,7 +68,6 @@ void REMOVE(Gamer** buffer, int i){
 }
 
 Gamer* GET_GAMER(Gamer** buffer, int i){
-	//printf("%d\n", buffer[i]->user_id);
 	return buffer[i];
 }
 

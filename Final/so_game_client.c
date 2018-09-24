@@ -1,11 +1,5 @@
-#ifdef __APPLE__
-#include <OpenGL/gl.h>
-#include <GLUT/glut.h>
-#else
 #include <GL/gl.h>
 #include <GL/glut.h>
-#endif
-
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,7 +9,6 @@
 #include <sys/socket.h>
 #include <errno.h>
 #include <semaphore.h>
-
 #include "image.h"
 #include "surface.h"
 #include "world.h"
@@ -70,18 +63,13 @@ void* updater_thread(void* args_){
   
   while(args->run){
     
-    //vehicle parameters
+    //parameters of vehicle
     vehicle_pack = calloc(1,sizeof(VehicleUpdatePacket));
     vehicle_pack->header = v_head;
     vehicle_pack->id = args->vehicle->id;
     vehicle_pack->rotational_force = args->vehicle->rotational_force_update;
     vehicle_pack->translational_force = args->vehicle->translational_force_update;
-    
-    /*printf("%sid    = \t%d%s\n", CYAN, vehicle_pack->id, RESET);
-    printf("%strans = \t%f%s\n", CYAN, vehicle_pack->translational_force, RESET);
-    printf("%srot   = \t%f%s\n", CYAN, vehicle_pack->rotational_force, RESET);*/
-    //fprintf(stderr,"%supdater   =  %d%s\n", CYAN, vehicle_pack_len, RESET);
-    
+        
     //send UDP packet
     vehicle_pack_len = Packet_serialize(vehicle_buf, &vehicle_pack->header);
     ret = SENDTO(udp_socket_desc, vehicle_buf, vehicle_pack_len, &udp_server_addr);
@@ -115,19 +103,19 @@ void* world_listener(void* args_){
     int udp_socket_desc = socket(AF_INET, SOCK_DGRAM, 0);
     ERROR_HELPER(udp_socket_desc, "Could not create socket");
 
-    //quickly restart our server after a crash 
+    //quickly restart server after a crash 
     int flag = 1;
     ret = setsockopt(udp_socket_desc, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
     ERROR_HELPER(ret, "Cannot set SO_REUSEADDR option");
 
     ret = bind(udp_socket_desc, (struct sockaddr*) &mc_udp_addr, sockaddr_len);
-    ERROR_HELPER(ret, "cannot bind socket");
+    ERROR_HELPER(ret, "Cannot bind socket");
 
     struct ip_mreq mrec;
     mrec.imr_multiaddr.s_addr = inet_addr(GROUP_ADDRESS);
     mrec.imr_interface.s_addr = htonl(INADDR_ANY);
     ret = setsockopt(udp_socket_desc, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mrec, sizeof(mrec));
-    ERROR_HELPER(ret, "cannot add membership");
+    ERROR_HELPER(ret, "Cannot add membership");
 
     while(args->run){
 
@@ -144,11 +132,7 @@ void* world_listener(void* args_){
             ret = FIND_GAMER(Gamers, updates[i].id);
             
             if (updates[i].id == user_id || ret == -1) continue;
-
-            /*printf("%sid      = \t%d%s\n", YELLOW,  updates[i].id, RESET);
-            printf("%sx y     = \t%f %f%s\n", YELLOW,  updates[i].x, updates[i].y, RESET);
-            printf("%stheta   = \t%f%s\n", YELLOW,  updates[i].theta, RESET);*/
-               
+             
             vehicle_i = World_getVehicle(args->world, updates[i].id);
             vehicle_i->x = updates[i].x;
             vehicle_i->y = updates[i].y;
@@ -165,6 +149,7 @@ void* world_listener(void* args_){
 
 
 void* notification_listener(void* args_){
+	
     notificationArgs* args = (notificationArgs*) args_;
 
     int ret, i, id, *ids;
@@ -182,27 +167,26 @@ void* notification_listener(void* args_){
     int udp_socket_desc = socket(AF_INET, SOCK_DGRAM, 0);
     ERROR_HELPER(udp_socket_desc, "Could not create socket");
 
-    //quickly restart our server after a crash 
+    //quickly restart server after a crash 
     int flag = 1;
     ret = setsockopt(udp_socket_desc, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
     ERROR_HELPER(ret, "Cannot set SO_REUSEADDR option");
 
     ret = bind(udp_socket_desc, (struct sockaddr*) &udp_server_addr, sockaddr_len);
-    ERROR_HELPER(ret, "cannot bind socket");
+    ERROR_HELPER(ret, "Cannot bind socket");
 
     struct ip_mreq mrec;
     mrec.imr_multiaddr.s_addr = inet_addr(GROUP_ADDRESS);
     mrec.imr_interface.s_addr = htonl(INADDR_ANY);
     ret = setsockopt(udp_socket_desc, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mrec, sizeof(mrec));
-    ERROR_HELPER(ret, "cannot add membership");
+    ERROR_HELPER(ret, "Cannot add membership");
 
     while(args->run){
 
-        //add/remove player to the poll
+        //add or remove player to the poll
         memset(buf, 0, sizeof(buf));
         vehicle_i = calloc(1, sizeof(Vehicle));
         ret = RECVFROM(udp_socket_desc, buf, sizeof(buf)-1);
-        //fprintf(stderr,"%snotification received %s%s\n", BLUE, buf, RESET);
         action = buf[0];
 
         if(action == RMV){
@@ -211,13 +195,13 @@ void* notification_listener(void* args_){
             vehicle_i = World_getVehicle(args->world, id);
             World_detachVehicle(args->world, vehicle_i);
             REMOVE_GAMER(Gamers, id);
-            printf("%s---@%d%s player %s%d%s left the game!\n", GREEN, user_id, RESET, 
-                            BLUE, id, RESET);
+            printf("%s---@%d%s player %s%d%s has left the room! \n", RED, user_id, RESET, BLUE, id, RESET);
         }
 
         else {
 
             for (i = 0; i < strlen(buf); i+=3){
+				//3 cause ID lenght
                 memcpy(dest, buf+i,USER_SIZE);
                 id = atoi(dest);
                 ret = FIND_GAMER(Gamers, id);
@@ -226,8 +210,7 @@ void* notification_listener(void* args_){
                     Vehicle_init(vehicle_i, args->world, id, my_texture_for_server);
                     World_addVehicle(args->world, vehicle_i);
                     ADD_GAMER(Gamers, id);
-                    printf("%s---@%d%s player %s%d%s joined the game!\n", GREEN, user_id, RESET, 
-                            BLUE, id, RESET);
+                    printf("%s---@%d%s The player %s%d%s joined the room!\n", RED, user_id, RESET, BLUE, id, RESET);
                     vehicle_i = calloc(1,sizeof(Vehicle));
                 }
             }
@@ -241,7 +224,7 @@ void* notification_listener(void* args_){
 int main(int argc, char **argv) {
 
     if (argc<2){
-        printf("%susage: %s <player texture> <server address> (optional)%s\n", GREEN, argv[0], RESET);
+        printf("%s usage: %s <player texture> <server address> %s\n", RED, argv[0], RESET);
         exit(-1);
     }
 
@@ -251,7 +234,6 @@ int main(int argc, char **argv) {
     }
 
     ip_addr = inet_addr(SERVER_ADDRESS);
-    //port_number = atoi(argv[2]); 
     World world;
 
     int ret = 0, msg_len = 0, recv_bytes = 0, pack_len = 0;
@@ -259,32 +241,33 @@ int main(int argc, char **argv) {
     size_t buf_len = sizeof(buf), img_pack_buf_len = sizeof(img_pack_buf); 
     size_t command_len = strlen(MAP_COMMAND);
 
-    // variables for handling a socket
+    //variables for managing a socket
     int socket_desc;
     struct sockaddr_in server_addr = {0};
 
-    // create a socket
+    //create a socket
     socket_desc = socket(AF_INET, SOCK_STREAM, 0);
     ERROR_HELPER(socket_desc, "Could not create socket");
 
-    // set up parameters for the connection
+    //set up parameters for the connection
     server_addr.sin_addr.s_addr = ip_addr;
     server_addr.sin_family      = AF_INET;
     server_addr.sin_port        = htons(SERVER_PORT);
 
-    // initiate a connection on the socket
+    //initiate a connection on the socket
     ret = connect(socket_desc, (struct sockaddr*) &server_addr, sizeof(struct sockaddr_in));
     ERROR_HELPER(ret, "Could not create connection");
-    printf("%s---@gamer%s connected to server!..\n", GREEN, RESET);
+    printf("%s---@gamer%s Bella u're connected to the server!..\n", RED, RESET);
 
-    //display welcome message
+    //welcome message
     recv_bytes = RECV(socket_desc, buf, buf_len-1);
     printf("%s\n", buf);
 
+	//taking user id
+	//reset for cancel the color
     user_id = atoi(buf+recv_bytes-strlen(RESET)-USER_SIZE);
-    //fprintf(stderr,"%s%d%s\n", GREEN, user_id, RESET);
     
-    printf("%s---@%d%s loading texture image from %s .. ", GREEN, user_id, RESET, argv[1]);
+    printf("%s---@%d%s loading texture image from %s .. ", RED, user_id, RESET, argv[1]);
     my_texture_for_server = Image_load(argv[1]);
     if (my_texture_for_server) {
         printf("Done!\n");
@@ -298,33 +281,35 @@ int main(int argc, char **argv) {
     
     //receive elevation from server
     pack_len = RECV(socket_desc, img_pack_buf, img_pack_buf_len-1);    
-    fprintf(stderr,"%s---@%d%s map elevation received. byte = %s%u%s\n",
-         GREEN, user_id, RESET, RED, pack_len, RESET);  
+    //fprintf(stderr,"%s---@%d%s map elevation received. byte = %s%u%s\n", RED, user_id, RESET, RED, pack_len, RESET);  
     ImagePacket* el_packet = (ImagePacket*) Packet_deserialize(img_pack_buf, pack_len);    
     memset(img_pack_buf, 0, pack_len);
 
-
     //receive texture from server
     pack_len = RECV(socket_desc, img_pack_buf, img_pack_buf_len-1);
-    fprintf(stderr,"%s---@%d%s map texture received. byte = %s%u%s\n",
-         GREEN, user_id, RESET, RED, pack_len, RESET); 
+    //fprintf(stderr,"%s---@%d%s map texture received. byte = %s%u%s\n", RED, user_id, RESET, RED, pack_len, RESET); 
     ImagePacket* text_packet = (ImagePacket*) Packet_deserialize(img_pack_buf, pack_len);
     memset(img_pack_buf, 0, pack_len);
     
-    //comment (provvisory for non-crash)
-    Image* el_packet_image = Image_load("./images/maze.pgm");
-    Image* text_packet_image = Image_load("./images/maze.ppm");
-
+    //comment for non-crash
+    Image* el_packet_image = Image_load("./images/test.pgm");
+    Image* text_packet_image = Image_load("./images/test.ppm");
+    
+	/*
+	Image* el_packet_image = el_packet->image;
+	Image* text_packet_image = text_packet->image;
+	*/
+	
     // construct the world
-    printf("%s---@%d%s launching the world\n", GREEN, user_id, RESET);
-    World_init(&world, el_packet_image, text_packet_image, 0.5, 0.5, 0.5);
+    printf("%s---@%d%s launching the world\n", RED, user_id, RESET);
+    World_init(&world, el_packet_image, text_packet_image, 2.5, 2.5, 2.5);
 
     //add this vehicle
     Vehicle* vehicle = (Vehicle*) malloc(sizeof(Vehicle));
     Vehicle_init(vehicle, &world, user_id, my_texture_for_server);
     World_addVehicle(&world, vehicle);
 
-    printf("%s---@%d%s press %sESC%s for end the game\n", GREEN, user_id, RESET, BLUE, RESET);
+    printf("%s---@%d%s press %sESC%s for end the game\n", RED, user_id, RESET, BLUE, RESET);
 	
     pthread_t runner_thread;
     updaterArgs runner_args={
@@ -332,24 +317,27 @@ int main(int argc, char **argv) {
          .vehicle=vehicle,
        	 .world=&world
     };
+    
     ret = pthread_create(&runner_thread, NULL, updater_thread, &runner_args); 
-    PTHREAD_ERROR_HELPER(ret, "could not create thread");
+    PTHREAD_ERROR_HELPER(ret, "Could not create thread");
 
     pthread_t listen_thread;
     listenArgs listen_args={
         .run=1,
         .world=&world
     };
+    
     ret = pthread_create(&listen_thread, NULL, world_listener, &listen_args);
-    PTHREAD_ERROR_HELPER(ret, "could not create thread");
+    PTHREAD_ERROR_HELPER(ret, "Could not create thread");
 
     pthread_t notification_thread;
     notificationArgs notification_args={
         .run=1,
         .world=&world
     };
+    
     ret = pthread_create(&notification_thread, NULL, notification_listener, &notification_args);
-    PTHREAD_ERROR_HELPER(ret, "could not create thread");
+    PTHREAD_ERROR_HELPER(ret, "Could not create thread");
 
     WorldViewer_runGlobal(&world, vehicle, &argc, argv);
     
@@ -365,9 +353,9 @@ int main(int argc, char **argv) {
     void* retval3;
     pthread_join(notification_thread, &retval3);
 
-    printf("%s---@%s%s exiting..\n", GREEN, user_id, RESET);
+    printf("%s---@%s%s Game Over! \n", RED, user_id, RESET);
     
-    //end message
+    //ending message
     msg_len = sprintf(buf, END_COMMAND);
     ret = SEND(socket_desc, buf, msg_len);
  
